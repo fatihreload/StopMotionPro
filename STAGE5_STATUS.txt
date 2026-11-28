@@ -1,0 +1,13 @@
+TAHAP 5 - IMPLEMENTASI AWAL
+
+Yang tersedia dalam ZIP ini:
+- Layar export yang dapat dibuka dari layar frame.
+- Pilihan FPS 1-30 dan preset resolusi SD 480p, HD 720p, FHD 1080p.
+- Implementasi ekspor MP4/H.264 menggunakan MediaCodec dan MediaMuxer ke Movies/FatihStopMotion.
+- Progress render dan pesan status.
+
+Belum selesai / belum diverifikasi:
+- GIF belum diimplementasikan.
+- Audio dari Tahap 4 belum digabungkan ke MP4.
+- Build Gradle tidak dapat dijalankan pada lingkungan pembuatan ini karena Gradle tidak tersedia. Harap uji di Android Studio.
+- Render MP4 belum diuji pada perangkat fisik; beberapa codec/vendor Android dapat berperilaku berbeda.

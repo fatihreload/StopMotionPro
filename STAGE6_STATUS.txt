@@ -1,0 +1,13 @@
+TAHAP 6 — WORKFLOW DAN DOKUMENTASI
+
+Ditambahkan:
+- GitHub Actions pada push, pull request ke main, dan workflow_dispatch.
+- Build APK debug, testDebugUnitTest, lintDebug.
+- Artifact APK dan laporan lint.
+- Panduan manajemen proyek, checklist pengujian manual, dan catatan optimasi.
+
+Batasan:
+- Workflow belum dijalankan dari repository GitHub pengguna.
+- Build dan lint belum diverifikasi di lingkungan ini.
+- Pengujian perangkat fisik tetap diperlukan.
+- Tahap 5 sebelumnya menyatakan GIF dan penggabungan audio belum selesai/terverifikasi.
