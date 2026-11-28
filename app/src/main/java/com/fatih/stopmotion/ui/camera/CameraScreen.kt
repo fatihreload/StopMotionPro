@@ -178,7 +178,7 @@ private fun PermissionRequest(onRequest: () -> Unit, onOpenSettings: () -> Unit,
         Text("Izin Kamera Diperlukan", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
         Text(
-            "Fatih Stop Motion Studio memakai kamera untuk mengambil frame animasi. " +
+            "Stop Motion Studio memakai kamera untuk mengambil frame animasi. " +
                 "Foto hanya disimpan di dalam aplikasi.",
             color = FatihColors.TextSecondary
         )

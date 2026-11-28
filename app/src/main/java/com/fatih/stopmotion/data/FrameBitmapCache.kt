@@ -20,6 +20,9 @@ class FrameBitmapCache(maxBytes: Int = defaultMaxBytes()) {
 
     fun get(path: String): Bitmap? = lru.get(path)
 
+    /** Perkiraan jumlah frame ukuran pratinjau yang muat di cache. */
+    fun capacityFrames(): Int = (lru.maxSize() / 2_800_000).coerceAtLeast(4)
+
     /** Dipanggil saat sistem kekurangan memori. */
     fun clear() = lru.evictAll()
 
@@ -32,7 +35,7 @@ class FrameBitmapCache(maxBytes: Int = defaultMaxBytes()) {
 
     companion object {
         private fun defaultMaxBytes(): Int =
-            (Runtime.getRuntime().maxMemory() / 8).toInt().coerceIn(16 * 1024 * 1024, 96 * 1024 * 1024)
+            (Runtime.getRuntime().maxMemory() / 5).toInt().coerceIn(32 * 1024 * 1024, 128 * 1024 * 1024)
 
         fun decodeSampled(path: String, targetShortSide: Int): Bitmap? {
             return try {

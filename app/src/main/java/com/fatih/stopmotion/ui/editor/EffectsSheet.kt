@@ -1,6 +1,13 @@
 package com.fatih.stopmotion.ui.editor
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -39,23 +46,32 @@ fun EffectsSheet(
     fx: FxState,
     fps: Int,
     onChange: (FxState) -> Unit,
-    onCommit: () -> Unit
+    onCommit: () -> Unit,
+    onClose: () -> Unit
 ) {
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 16.dp)
-            .navigationBarsPadding()
+            .background(FatihColors.Surface)
+            .padding(horizontal = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Efek", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+            Text("Efek film", fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 4.dp))
             TextButton(
                 onClick = { onChange(FxState()); onCommit() },
                 enabled = !fx.isDefault
             ) { Text("Reset") }
+            IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "Tutup efek film")
+            }
         }
+        // Isi bisa digulir dan dibatasi tingginya supaya pratinjau tetap terlihat.
+        Column(
+            Modifier
+                .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.30f).dp)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 8.dp)
+        ) {
 
         Label("Filter")
         Row(
@@ -88,11 +104,12 @@ fun EffectsSheet(
             Chip("Ke putih", fx.fadeWhite) { onChange(fx.copy(fadeWhite = true)); onCommit() }
         }
         Text(
-            "Efek berlaku untuk seluruh film, bukan mengubah foto asli.",
+            "Filter, vignette, dan fade berlaku untuk seluruh film dan tidak mengubah foto asli. Untuk koreksi warna, putar, atau potong satu foto, pakai Edit foto.",
             fontSize = 11.sp,
             color = FatihColors.TextSecondary,
             modifier = Modifier.padding(top = 10.dp)
         )
+        }
     }
 }
 

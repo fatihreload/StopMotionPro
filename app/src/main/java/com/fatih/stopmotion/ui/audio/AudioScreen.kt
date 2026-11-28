@@ -9,6 +9,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -150,7 +153,12 @@ private class TrackPreviewer {
 }
 
 @Composable
-fun AudioScreen(projectId: Long, container: AppContainer, onBack: () -> Unit) {
+fun AudioScreen(
+    projectId: Long,
+    container: AppContainer,
+    onBack: () -> Unit,
+    inline: Boolean = false
+) {
     val context = LocalContext.current
     val vm: AudioViewModel = viewModel(
         key = "audio_$projectId",
@@ -243,23 +251,36 @@ fun AudioScreen(projectId: Long, container: AppContainer, onBack: () -> Unit) {
     }
     var showSfx by rememberSaveable { mutableStateOf(false) }
 
-    Column(
+    // inline = dipakai sebagai panel di bawah pratinjau Studio Animasi (tanpa pindah layar).
+    val rootModifier = if (inline) {
         Modifier
-            .fillMaxSize()
-            .background(FatihColors.Black)
-            .systemBarsPadding()
-    ) {
+            .fillMaxWidth()
+            .background(FatihColors.Surface)
+            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.40f).dp)
+    } else {
+        Modifier.fillMaxSize().background(FatihColors.Black).systemBarsPadding()
+    }
+    Column(rootModifier) {
+        val listWeight = if (inline) Modifier.fillMaxWidth() else Modifier.weight(1f).fillMaxWidth()
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali")
+            IconButton(
+                onClick = { finishRecording(true); previewer.stop(); onBack() },
+                modifier = if (inline) Modifier.size(36.dp) else Modifier
+            ) {
+                if (inline) Icon(Icons.Filled.Close, contentDescription = "Tutup audio")
+                else Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali")
             }
             Column(Modifier.weight(1f)) {
-                Text(project?.name ?: "", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Studio Audio", fontSize = 12.sp, color = FatihColors.Blue)
+                if (inline) {
+                    Text("Audio", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                } else {
+                    Text(project?.name ?: "", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Studio Audio", fontSize = 12.sp, color = FatihColors.Blue)
+                }
             }
         }
 
-        TimelineOverview(filmSec, tracks)
+        if (!inline) TimelineOverview(filmSec, tracks)
 
         // ---------- Tombol tambah ----------
         Row(
@@ -306,7 +327,7 @@ fun AudioScreen(projectId: Long, container: AppContainer, onBack: () -> Unit) {
         }
 
         if (tracks.isEmpty()) {
-            Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+            Box(listWeight.padding(if (inline) 12.dp else 24.dp), contentAlignment = Alignment.Center) {
                 Text(
                     "Belum ada audio. Impor musik, rekam suara, atau tambah efek suara.",
                     color = FatihColors.TextSecondary
@@ -314,7 +335,7 @@ fun AudioScreen(projectId: Long, container: AppContainer, onBack: () -> Unit) {
             }
         } else {
             LazyColumn(
-                Modifier.weight(1f).fillMaxWidth(),
+                listWeight,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {

@@ -103,6 +103,11 @@ import com.fatih.stopmotion.fx.ImageFx
 import com.fatih.stopmotion.ui.theme.FatihColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import com.fatih.stopmotion.fx.LayerFiles
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -207,6 +212,7 @@ fun EditorScreen(
     }
     var chroma by remember(storedChroma) { mutableStateOf(storedChroma) }
     var showChroma by remember { mutableStateOf(false) }
+    var showAudio by remember { mutableStateOf(false) }
     val pickBackground = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.setBackgroundImage(uri)
     }
@@ -237,6 +243,7 @@ fun EditorScreen(
     val layers by vm.layers.collectAsStateWithLifecycle()
     val layerBusy by vm.layerBusy.collectAsStateWithLifecycle()
     var showLayers by remember { mutableStateOf(false) }
+    val panelOpen = showLayers || showFx || showChroma || showAudio // panel bawah terbuka: sembunyikan alat dan timeline agar pratinjau luas
     var showAddLayer by remember { mutableStateOf(false) }
     var selectedLayerId by remember { mutableStateOf<Long?>(null) }
     var liveLayer by remember { mutableStateOf<LayerEntity?>(null) }
@@ -304,17 +311,56 @@ fun EditorScreen(
         }
     }
 
-    // ---- Prefetch beberapa frame ke depan agar playback mulus ----
+    // ---- Prefetch ke depan (paralel): foto, hasil chroma/erase, dan frame tiap layer, supaya playback tidak patah ----
     val currentTickNow by rememberUpdatedState(safeTick)
-    LaunchedEffect(frames, playing) {
+    val latestLayers by rememberUpdatedState(shownLayers)
+    val latestChroma by rememberUpdatedState(chroma)
+    val latestFps by rememberUpdatedState(fps)
+    LaunchedEffect(frames, playing, speed, fps) {
         if (!playing || n == 0) return@LaunchedEffect
+        val gate = Semaphore(3)
+        val ahead = (fps * speed * 1.2f).roundToInt()
+            .coerceIn(8, 36)
+            .coerceAtMost((cache.capacityFrames() - 4).coerceAtLeast(4))
         while (isActive) {
             val cur = currentTickNow
-            for (k in 1..24) {
-                val fi = tickToFrame[(cur + k) % n]
-                if (cache.get(frames[fi].filePath) == null) cache.load(frames[fi].filePath)
+            val ch = latestChroma
+            val lys = latestLayers
+            coroutineScope {
+                for (k in 1..ahead) {
+                    val t = (cur + k) % n
+                    val frame = frames[tickToFrame[t]]
+                    val path = frame.filePath
+                    if (cache.get(path) == null) launch { gate.withPermit { cache.load(path) } }
+                    if (ch.active || !frame.eraseData.isNullOrEmpty()) {
+                        val key = "$path|${ch.cacheKey()}|${frame.eraseData?.hashCode() ?: 0}"
+                        if (keyedCache.get(key) == null) launch {
+                            gate.withPermit {
+                                val src = cache.load(path) ?: return@withPermit
+                                val out = withContext(Dispatchers.Default) {
+                                    ChromaKey.process(src, ch, EraseCodec.decode(frame.eraseData), 960)
+                                }
+                                keyedCache.put(key, out)
+                            }
+                        }
+                    }
+                    if (k <= 20 && lys.isNotEmpty()) {
+                        val ms = (t * 1000L) / latestFps.coerceAtLeast(1)
+                        for (l in lys) {
+                            val idx = LayerTiming.frameIndex(l, ms) ?: continue
+                            val lp = LayerFiles.framePath(l, idx) ?: continue
+                            val lk = layerCacheKey(l, lp)
+                            if (layerCache.get(lk) == null) launch {
+                                gate.withPermit {
+                                    val bmp = withContext(Dispatchers.Default) { decodeLayerBitmap(l, lp) }
+                                    if (bmp != null) layerCache.put(lk, bmp)
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            delay(40)
+            delay(20)
         }
     }
 
@@ -361,7 +407,7 @@ fun EditorScreen(
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             contentAlignment = Alignment.Center
         ) {
             if (n == 0) {
@@ -429,57 +475,36 @@ fun EditorScreen(
                             )
                         )
                     }
-                    if (showChroma) {
-                        ChromaPanel(
-                            chroma = chroma,
-                            onChange = { chroma = it },
-                            onCommit = { vm.setChroma(chroma) },
-                            onPickBackground = { pickBackground.launch(arrayOf("image/*")) },
-                            onClearBackground = { vm.clearBackgroundImage() },
-                            onClose = { showChroma = false },
-                            modifier = Modifier.align(Alignment.BottomCenter)
-                        )
-                    }
                 }
             }
         }
 
-        // ---------- Info + seek ----------
+        // ---------- Info + kontrol putar (satu baris ringkas: Stop, Play, slider, mode putar) ----------
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
                 "Frame ${if (currentIndex >= 0) currentIndex + 1 else 0} / ${frames.size}",
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
                 "${formatTime(safeTick / fps.toFloat())} / ${formatTime(n / fps.toFloat())}",
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 color = FatihColors.Blue
             )
         }
-        Slider(
-            value = safeTick.toFloat(),
-            onValueChange = { playing = false; tick = it.roundToInt() },
-            valueRange = 0f..(n - 1).coerceAtLeast(1).toFloat(),
-            enabled = n > 1,
-            modifier = Modifier.padding(horizontal = 8.dp).height(28.dp)
-        )
-
-        // ---------- Transport ----------
         Row(
-            Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { playing = false; tick = 0 }, enabled = n > 0) {
+            IconButton(onClick = { playing = false; tick = 0 }, enabled = n > 0, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Filled.Stop, contentDescription = "Stop")
             }
             Box(
                 Modifier
-                    .size(60.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
                     .background(if (n > 0) FatihColors.ShutterRed else FatihColors.SurfaceHigh)
                     .clickable(enabled = n > 0) {
@@ -494,42 +519,48 @@ fun EditorScreen(
                     if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (playing) "Pause" else "Play",
                     tint = Color.White,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
-            TextButton(onClick = {
-                playMode = when (playMode) {
-                    PlayMode.ONCE -> PlayMode.LOOP
-                    PlayMode.LOOP -> PlayMode.PINGPONG
-                    else -> PlayMode.ONCE
-                }
-            }) {
+            Slider(
+                value = safeTick.toFloat(),
+                onValueChange = { playing = false; tick = it.roundToInt() },
+                valueRange = 0f..(n - 1).coerceAtLeast(1).toFloat(),
+                enabled = n > 1,
+                modifier = Modifier.weight(1f).padding(horizontal = 6.dp).height(28.dp)
+            )
+            IconButton(
+                onClick = {
+                    playMode = when (playMode) {
+                        PlayMode.ONCE -> PlayMode.LOOP
+                        PlayMode.LOOP -> PlayMode.PINGPONG
+                        else -> PlayMode.ONCE
+                    }
+                },
+                modifier = Modifier.size(40.dp)
+            ) {
                 Icon(
                     when (playMode) {
                         PlayMode.ONCE -> Icons.Filled.RepeatOne
                         PlayMode.LOOP -> Icons.Filled.Repeat
                         else -> Icons.Filled.SwapHoriz
                     },
-                    contentDescription = null,
+                    contentDescription = when (playMode) {
+                        PlayMode.ONCE -> "Mode putar: sekali"
+                        PlayMode.LOOP -> "Mode putar: loop"
+                        else -> "Mode putar: ping-pong"
+                    },
                     tint = FatihColors.Purple
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    when (playMode) {
-                        PlayMode.ONCE -> "Sekali"
-                        PlayMode.LOOP -> "Loop"
-                        else -> "Ping-pong"
-                    }
                 )
             }
         }
 
-        // ---------- Alat: efek, audio, edit foto ----------
-        Row(
+        // ---------- Alat: efek, audio, edit foto (disembunyikan saat panel layer terbuka agar pratinjau lebih luas) ----------
+        if (!panelOpen) Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            TextButton(onClick = { showChroma = !showChroma; if (showChroma) showLayers = false }, contentPadding = ToolPadding) {
+            TextButton(onClick = { showChroma = !showChroma; if (showChroma) { showLayers = false; showFx = false; showAudio = false } }, contentPadding = ToolPadding) {
                 Icon(
                     Icons.Filled.Wallpaper,
                     contentDescription = null,
@@ -539,7 +570,7 @@ fun EditorScreen(
                 Text("Chroma")
             }
             TextButton(
-                onClick = { showLayers = !showLayers; if (showLayers) showChroma = false },
+                onClick = { showLayers = !showLayers; if (showLayers) { showChroma = false; showFx = false; showAudio = false } },
                 contentPadding = ToolPadding
             ) {
                 Icon(
@@ -550,12 +581,12 @@ fun EditorScreen(
                 Spacer(Modifier.width(4.dp))
                 Text(if (layers.isEmpty()) "Layer" else "Layer (${layers.size})")
             }
-            TextButton(onClick = { showFx = true }, contentPadding = ToolPadding) {
+            TextButton(onClick = { showFx = true; showLayers = false; showChroma = false; showAudio = false }, contentPadding = ToolPadding) {
                 Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = if (fx.isDefault) Color.White else FatihColors.Purple)
                 Spacer(Modifier.width(4.dp))
-                Text("Efek")
+                Text("Efek film")
             }
-            TextButton(onClick = { playing = false; onOpenAudio() }, contentPadding = ToolPadding) {
+            TextButton(onClick = { playing = false; showAudio = true; showLayers = false; showChroma = false; showFx = false }, contentPadding = ToolPadding) {
                 Icon(Icons.Filled.MusicNote, contentDescription = null, tint = if (audioTracks.isEmpty()) Color.White else FatihColors.Purple)
                 Spacer(Modifier.width(4.dp))
                 Text(if (audioTracks.isEmpty()) "Audio" else "Audio (${audioTracks.size})")
@@ -567,7 +598,7 @@ fun EditorScreen(
             ) {
                 Icon(Icons.Filled.Tune, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
-                Text("Foto")
+                Text("Edit foto")
             }
             TextButton(
                 onClick = { currentFrame?.let { playing = false; onErase(it.id) } },
@@ -595,7 +626,7 @@ fun EditorScreen(
                 onSeek = { ms ->
                     if (n > 0) {
                         playing = false
-                        tick = ((ms * fps) / 1000).toInt().coerceIn(0, n - 1)
+                        tick = Math.round(ms * fps / 1000.0).toInt().coerceIn(0, n - 1)
                     }
                 },
                 onSelect = { id ->
@@ -615,6 +646,30 @@ fun EditorScreen(
                 onMove = { id, up -> vm.moveLayer(id, up) },
                 onCancelBusy = { vm.cancelLayerJob() },
                 onClose = { showLayers = false }
+            )
+        } else if (showFx) {
+            EffectsSheet(
+                fx = fx,
+                fps = fps,
+                onChange = { fx = it },
+                onCommit = { vm.setEffects(fx) },
+                onClose = { showFx = false }
+            )
+        } else if (showChroma) {
+            ChromaPanel(
+                chroma = chroma,
+                onChange = { chroma = it },
+                onCommit = { vm.setChroma(chroma) },
+                onPickBackground = { pickBackground.launch(arrayOf("image/*")) },
+                onClearBackground = { vm.clearBackgroundImage() },
+                onClose = { showChroma = false }
+            )
+        } else if (showAudio) {
+            com.fatih.stopmotion.ui.audio.AudioScreen(
+                projectId = projectId,
+                container = container,
+                onBack = { showAudio = false },
+                inline = true
             )
         } else {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -643,8 +698,8 @@ fun EditorScreen(
         }
         }
 
-        // ---------- Timeline ----------
-        Column(Modifier.fillMaxWidth().background(FatihColors.Surface)) {
+        // ---------- Timeline (disembunyikan saat panel layer terbuka; waktu diatur lewat jalur di panel layer) ----------
+        if (!panelOpen) Column(Modifier.fillMaxWidth().background(FatihColors.Surface)) {
             Row(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -733,21 +788,6 @@ fun EditorScreen(
             confirmButton = {},
             dismissButton = { TextButton(onClick = { showAddLayer = false }) { Text("Tutup") } }
         )
-    }
-
-    if (showFx) {
-        ModalBottomSheet(
-            onDismissRequest = { showFx = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = FatihColors.Surface
-        ) {
-            EffectsSheet(
-                fx = fx,
-                fps = fps,
-                onChange = { fx = it },
-                onCommit = { vm.setEffects(fx) }
-            )
-        }
     }
 }
 

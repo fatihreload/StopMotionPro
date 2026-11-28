@@ -129,11 +129,11 @@ fun HomeScreen(container: AppContainer, onOpenProject: (Long) -> Unit) {
             FatihLogo()
             Spacer(Modifier.size(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("FATIH", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 4.sp)
+                Text("Stop Motion", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                 Text(
-                    "STOP MOTION STUDIO",
-                    fontSize = 11.sp,
-                    letterSpacing = 2.sp,
+                    "Studio",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
                     color = FatihColors.TextSecondary
                 )
             }
@@ -412,15 +412,11 @@ private fun SortChip(label: String, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun FatihLogo() {
-    Box(
-        Modifier
-            .size(56.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Brush.linearGradient(listOf(FatihColors.Purple, FatihColors.Blue))),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(Icons.Filled.Movie, contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
-    }
+    androidx.compose.foundation.Image(
+        painter = androidx.compose.ui.res.painterResource(com.fatih.stopmotion.R.drawable.app_logo),
+        contentDescription = "Stop Motion Studio",
+        modifier = Modifier.size(56.dp)
+    )
 }
 
 @Composable

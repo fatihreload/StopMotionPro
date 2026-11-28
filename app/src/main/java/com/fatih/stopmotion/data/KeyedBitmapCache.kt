@@ -15,6 +15,6 @@ class KeyedBitmapCache(maxBytes: Int = defaultMaxBytes()) {
 
     companion object {
         private fun defaultMaxBytes(): Int =
-            (Runtime.getRuntime().maxMemory() / 10).toInt().coerceIn(12 * 1024 * 1024, 48 * 1024 * 1024)
+            (Runtime.getRuntime().maxMemory() / 6).toInt().coerceIn(24 * 1024 * 1024, 96 * 1024 * 1024)
     }
 }

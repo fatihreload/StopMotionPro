@@ -1,6 +1,21 @@
 package com.fatih.stopmotion.ui.editor
 
 import androidx.compose.foundation.background
+import com.fatih.stopmotion.fx.Keyframe
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -139,7 +154,8 @@ fun LayerPanel(
                 MiniChip("Atur", null, tab == 3) { tab = 3 }
                 MiniChip(if (KeyframeMath.hasKeyframes(selected)) "\u25c6 Animasi" else "Animasi", null, tab == 4) { tab = 4 }
             }
-            Column(Modifier.heightIn(max = 150.dp).verticalScroll(rememberScrollState())) {
+            val maxBody = (LocalConfiguration.current.screenHeightDp * if (tab == 4) 0.30f else 0.22f).dp
+            Column(Modifier.heightIn(max = maxBody).verticalScroll(rememberScrollState())) {
                 when (tab) {
                     0 -> {
                         val filmSec = max(filmMs / 1000f, 1f)
@@ -226,43 +242,61 @@ fun LayerPanel(
                         // ---------- Animasi (keyframe) ----------
                         val keys = KeyframeMath.keys(selected)
                         val local = (currentMs - selected.startMs).coerceIn(0L, selected.durationMs.coerceAtLeast(0L))
+                        val inRange = currentMs >= selected.startMs && currentMs <= selected.startMs + selected.durationMs
                         val atIdx = KeyframeMath.indexAt(keys, local)
-                        if (keys.isEmpty()) {
-                            Text(
-                                "Belum ada animasi. Ketuk Mulai animasi, lalu geser waktu film dan ubah posisi, ukuran, putaran, " +
-                                    "atau opasitas layer. Gerak di antara keyframe dihitung otomatis.",
-                                fontSize = 11.sp,
-                                color = FatihColors.TextSecondary,
-                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp)
-                            )
-                        } else {
-                            Row(
-                                Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                keys.forEachIndexed { i, k ->
-                                    MiniChip("\u25c6 " + sec(k.timeMs), null, i == atIdx) { onSeek(selected.startMs + k.timeMs) }
-                                }
-                            }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(
-                                onClick = { onChange(KeyframeMath.addKeyframe(selected, currentMs)); onCommit() },
-                                enabled = atIdx < 0 && keys.size < KeyframeMath.MAX_KEYFRAMES
-                            ) {
-                                Text(if (keys.isEmpty()) "Mulai animasi di sini" else "+ Keyframe di sini", fontSize = 12.sp)
-                            }
+                        val tf = KeyframeMath.sample(selected, currentMs)
+                        fun edit(t: LayerTransform) = KeyframeMath.applyEdit(selected, currentMs, t)
+
+                        KeyTrack(keys, selected.durationMs, local, inRange) { onSeek(selected.startMs + it) }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val prev = keys.lastOrNull { it.timeMs < local - KeyframeMath.SAME_TIME_MS }
+                            val next = keys.firstOrNull { it.timeMs > local + KeyframeMath.SAME_TIME_MS }
+                            IconButton(
+                                onClick = { prev?.let { onSeek(selected.startMs + it.timeMs) } },
+                                enabled = prev != null
+                            ) { Icon(Icons.Filled.SkipPrevious, contentDescription = "Keyframe sebelumnya") }
                             if (atIdx >= 0) {
-                                TextButton(onClick = { onChange(KeyframeMath.removeKeyframeAt(selected, currentMs)); onCommit() }) {
-                                    Text("Hapus keyframe", fontSize = 12.sp, color = FatihColors.ShutterRed)
-                                }
+                                OutlinedButton(
+                                    onClick = { onChange(KeyframeMath.removeKeyframeAt(selected, currentMs)); onCommit() },
+                                    modifier = Modifier.height(38.dp)
+                                ) { Text("\u25c6 Hapus keyframe", fontSize = 13.sp, color = FatihColors.ShutterRed) }
+                            } else {
+                                Button(
+                                    onClick = { onChange(KeyframeMath.addKeyframe(selected, currentMs)); onCommit() },
+                                    enabled = inRange && keys.size < KeyframeMath.MAX_KEYFRAMES,
+                                    modifier = Modifier.height(38.dp)
+                                ) { Text("\u25c6 Tambah keyframe", fontSize = 13.sp) }
                             }
-                            if (keys.isNotEmpty()) {
-                                TextButton(onClick = { onChange(KeyframeMath.clearAnimation(selected, currentMs)); onCommit() }) {
-                                    Text("Hapus animasi", fontSize = 12.sp, color = FatihColors.ShutterRed)
-                                }
-                            }
+                            IconButton(
+                                onClick = { next?.let { onSeek(selected.startMs + it.timeMs) } },
+                                enabled = next != null
+                            ) { Icon(Icons.Filled.SkipNext, contentDescription = "Keyframe berikutnya") }
                         }
+                        Text(
+                            when {
+                                !inRange -> "Waktu film sekarang di luar durasi layer. Ketuk jalur di atas untuk masuk ke rentang layer."
+                                keys.isEmpty() -> "Belum ada animasi. Tambah keyframe di awal, pindah waktu, lalu ubah nilai di bawah."
+                                atIdx >= 0 -> "Di keyframe ini. Ubah nilai di bawah untuk memperbarui."
+                                else -> "Mengubah nilai di bawah akan membuat keyframe baru di waktu ini."
+                            },
+                            fontSize = 11.sp,
+                            color = FatihColors.TextSecondary,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                        LSlider("Posisi X", tf.posX, -0.25f..1.25f, "${(tf.posX * 100).toInt()}%",
+                            { onChange(edit(tf.copy(posX = it))) }, onCommit)
+                        LSlider("Posisi Y", tf.posY, -0.25f..1.25f, "${(tf.posY * 100).toInt()}%",
+                            { onChange(edit(tf.copy(posY = it))) }, onCommit)
+                        LSlider("Ukuran", tf.scale, 0.05f..2f, "${(tf.scale * 100).toInt()}%",
+                            { onChange(edit(tf.copy(scale = it))) }, onCommit)
+                        LSlider("Putar", tf.rotation.coerceIn(-180f, 180f), -180f..180f, "${tf.rotation.toInt()}\u00b0",
+                            { onChange(edit(tf.copy(rotation = it))) }, onCommit)
+                        LSlider("Opasitas", tf.opacity, 0f..1f, "${(tf.opacity * 100).toInt()}%",
+                            { onChange(edit(tf.copy(opacity = it))) }, onCommit)
                         if (atIdx >= 0) {
                             val ease = keys[atIdx].ease
                             Row(
@@ -270,7 +304,8 @@ fun LayerPanel(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Gerak ke keyframe berikutnya:", fontSize = 11.sp, color = FatihColors.TextSecondary)
+                                Text("Gerak ke berikutnya:", fontSize = 11.sp, color = FatihColors.TextSecondary,
+                                    modifier = Modifier.padding(start = 4.dp))
                                 MiniChip("Lurus", null, ease == KeyframeEase.LINEAR) {
                                     onChange(KeyframeMath.setEaseAt(selected, currentMs, KeyframeEase.LINEAR)); onCommit()
                                 }
@@ -281,13 +316,11 @@ fun LayerPanel(
                                     onChange(KeyframeMath.setEaseAt(selected, currentMs, KeyframeEase.HOLD)); onCommit()
                                 }
                             }
-                        } else if (keys.isNotEmpty()) {
-                            Text(
-                                "Ubah layer di pratinjau pada waktu lain untuk membuat keyframe baru.",
-                                fontSize = 11.sp,
-                                color = FatihColors.TextSecondary,
-                                modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp)
-                            )
+                        }
+                        if (keys.isNotEmpty()) {
+                            TextButton(onClick = { onChange(KeyframeMath.clearAnimation(selected, currentMs)); onCommit() }) {
+                                Text("Hapus semua animasi", fontSize = 12.sp, color = FatihColors.ShutterRed)
+                            }
                         }
                     }
                     else -> {
@@ -359,5 +392,83 @@ private fun LSlider(
             color = FatihColors.TextSecondary,
             modifier = Modifier.width(52.dp).padding(start = 4.dp)
         )
+    }
+}
+
+/**
+ * Jalur keyframe: garis waktu layer (awal sampai akhir), tiap keyframe berupa belah ketupat, dan garis putih menandai
+ * waktu film sekarang. Ketuk atau geser untuk pindah waktu.
+ */
+@Composable
+private fun KeyTrack(
+    keys: List<Keyframe>,
+    durationMs: Long,
+    localMs: Long,
+    inRange: Boolean,
+    onSeekLocal: (Long) -> Unit
+) {
+    val dur = durationMs.coerceAtLeast(1L)
+    val seek by rememberUpdatedState(onSeekLocal)
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .height(48.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(FatihColors.SurfaceHigh)
+            .pointerInput(dur) {
+                val inset = 14.dp.toPx()
+                fun toMs(x: Float): Long {
+                    val f = ((x - inset) / (size.width - 2 * inset).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                    return (f * dur).toLong()
+                }
+                detectTapGestures { seek(toMs(it.x)) }
+            }
+            .pointerInput(dur) {
+                val inset = 14.dp.toPx()
+                detectHorizontalDragGestures { change, _ ->
+                    change.consume()
+                    val f = ((change.position.x - inset) / (size.width - 2 * inset).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                    seek((f * dur).toLong())
+                }
+            }
+    ) {
+        val inset = 14.dp.toPx()
+        val w = size.width - 2 * inset
+        val cy = size.height / 2f
+        fun xAt(ms: Long) = inset + (ms.coerceIn(0L, dur).toFloat() / dur) * w
+        // garis dasar dan penanda tiap detik
+        drawLine(Color(0xFF55555F), Offset(inset, cy), Offset(inset + w, cy), strokeWidth = 2.dp.toPx())
+        var s = 0L
+        while (s <= dur) {
+            val x = xAt(s)
+            drawLine(Color(0xFF55555F), Offset(x, cy - 5.dp.toPx()), Offset(x, cy + 5.dp.toPx()), strokeWidth = 1.dp.toPx())
+            s += 1000L
+            if (dur / 1000L > 30L) s += 4000L
+        }
+        // jarak antar keyframe
+        for (i in 0 until keys.size - 1) {
+            drawLine(
+                Color(0xFF8E5CFF).copy(alpha = 0.55f),
+                Offset(xAt(keys[i].timeMs), cy), Offset(xAt(keys[i + 1].timeMs), cy), strokeWidth = 4.dp.toPx()
+            )
+        }
+        // keyframe
+        val r = 9.dp.toPx()
+        for (k in keys) {
+            val x = xAt(k.timeMs)
+            val active = kotlin.math.abs(k.timeMs - localMs) <= KeyframeMath.SAME_TIME_MS
+            val rr = if (active) r * 1.25f else r
+            val path = Path().apply {
+                moveTo(x, cy - rr); lineTo(x + rr, cy); lineTo(x, cy + rr); lineTo(x - rr, cy); close()
+            }
+            drawPath(path, if (active) Color.White else Color(0xFF8E5CFF))
+            drawPath(path, Color(0xFF0E0E14), style = Stroke(width = 1.5.dp.toPx()))
+        }
+        // waktu sekarang
+        if (inRange) {
+            val x = xAt(localMs)
+            drawLine(Color(0xFFFF4D4D), Offset(x, 2.dp.toPx()), Offset(x, size.height - 2.dp.toPx()), strokeWidth = 2.dp.toPx())
+        }
     }
 }

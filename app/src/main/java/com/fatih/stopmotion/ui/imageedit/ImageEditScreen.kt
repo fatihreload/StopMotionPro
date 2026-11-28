@@ -127,7 +127,7 @@ fun ImageEditScreen(projectId: Long, frameId: Long, container: AppContainer, onB
             Column(Modifier.weight(1f)) {
                 Text("Edit Foto", fontWeight = FontWeight.SemiBold)
                 Text(
-                    if (frameNumber > 0) "Frame $frameNumber" else "",
+                    if (frameNumber > 0) "Frame $frameNumber \u2022 warna, putar, potong" else "",
                     fontSize = 12.sp,
                     color = FatihColors.Blue
                 )
@@ -187,10 +187,9 @@ fun ImageEditScreen(projectId: Long, frameId: Long, container: AppContainer, onB
             Modifier.fillMaxWidth().padding(vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            EditTab(Icons.Filled.Palette, "Filter", tab == 0) { tab = 0 }
-            EditTab(Icons.Filled.Tune, "Warna", tab == 1) { tab = 1 }
-            EditTab(Icons.Filled.RotateRight, "Putar", tab == 2) { tab = 2 }
-            EditTab(Icons.Filled.Crop, "Potong", tab == 3) { tab = 3 }
+            EditTab(Icons.Filled.Tune, "Warna", tab == 0) { tab = 0 }
+            EditTab(Icons.Filled.RotateRight, "Putar", tab == 1) { tab = 1 }
+            EditTab(Icons.Filled.Crop, "Potong", tab == 2) { tab = 2 }
         }
 
         // ---------- Panel ----------
@@ -203,9 +202,8 @@ fun ImageEditScreen(projectId: Long, frameId: Long, container: AppContainer, onB
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             when (tab) {
-                0 -> FilterPanel(preview, edit) { edit = it }
-                1 -> ColorPanel(edit) { edit = it }
-                2 -> RotatePanel(edit) { edit = it }
+                0 -> ColorPanel(edit) { edit = it }
+                1 -> RotatePanel(edit) { edit = it }
                 else -> CropPanel(edit) { edit = it }
             }
         }
@@ -282,56 +280,6 @@ private fun LabeledSlider(
             color = FatihColors.TextSecondary,
             modifier = Modifier.width(42.dp)
         )
-    }
-}
-
-@Composable
-private fun FilterPanel(preview: Bitmap?, edit: EditParams, onChange: (EditParams) -> Unit) {
-    val thumb: ImageBitmap? = remember(preview) { preview?.asImageBitmap() }
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterNames.forEachIndexed { i, name ->
-            val filter = remember(i) {
-                ImageFx.colorArray(0f, 1f, 1f, 0f, i, 1f)?.let { ColorFilter.colorMatrix(ColorMatrix(it)) }
-            }
-            val selected = edit.filter == i
-            Column(
-                Modifier.clickable { onChange(edit.copy(filter = i)) },
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    Modifier
-                        .size(56.dp, 72.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(FatihColors.SurfaceHigh)
-                        .border(
-                            if (selected) 2.dp else 0.dp,
-                            if (selected) FatihColors.Purple else Color.Transparent,
-                            RoundedCornerShape(8.dp)
-                        )
-                ) {
-                    if (thumb != null) {
-                        Image(
-                            bitmap = thumb,
-                            contentDescription = name,
-                            contentScale = ContentScale.Crop,
-                            colorFilter = filter,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-                Text(
-                    name,
-                    fontSize = 10.sp,
-                    color = if (selected) FatihColors.Purple else FatihColors.TextSecondary
-                )
-            }
-        }
-    }
-    if (edit.filter != 0) {
-        LabeledSlider(
-            "Kekuatan", edit.filterIntensity, 0f..1f,
-            "${(edit.filterIntensity * 100).toInt()}%"
-        ) { onChange(edit.copy(filterIntensity = it)) }
     }
 }
 

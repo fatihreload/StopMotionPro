@@ -47,9 +47,7 @@ private const val PREVIEW_MAX_SIDE = 720
 @Composable
 private fun rememberLayerImage(l: LayerEntity, index: Int?, cache: KeyedBitmapCache): ImageBitmap? {
     val path = index?.let { LayerFiles.framePath(l, it) }
-    val key = path?.let {
-        "L|$it|${l.chromaMode}|${(l.chromaTolerance * 100).roundToInt()}|${(l.chromaSoftness * 100).roundToInt()}"
-    }
+    val key = path?.let { layerCacheKey(l, it) }
     val state = produceState<ImageBitmap?>(initialValue = key?.let { cache.get(it) }?.asImageBitmap(), key) {
         if (key == null || path == null) {
             value = null
@@ -60,19 +58,25 @@ private fun rememberLayerImage(l: LayerEntity, index: Int?, cache: KeyedBitmapCa
             value = hit.asImageBitmap()
             return@produceState
         }
-        val bmp = withContext(Dispatchers.Default) {
-            val raw = ImageFx.decode(path, PREVIEW_MAX_SIDE) ?: return@withContext null
-            if (l.chromaMode != 0) {
-                ChromaKey.process(raw, ChromaState(l.chromaMode, l.chromaTolerance, l.chromaSoftness), emptyList())
-                    .also { if (it !== raw) raw.recycle() }
-            } else raw
-        }
+        val bmp = withContext(Dispatchers.Default) { decodeLayerBitmap(l, path) }
         if (bmp != null) {
             cache.put(key, bmp)
             value = bmp.asImageBitmap()
         }
     }
     return state.value
+}
+
+internal fun layerCacheKey(l: LayerEntity, path: String): String =
+    "L|$path|${l.chromaMode}|${(l.chromaTolerance * 100).roundToInt()}|${(l.chromaSoftness * 100).roundToInt()}"
+
+/** Memuat satu frame layer untuk pratinjau (dengan chroma key bila aktif). Panggil dari thread latar. */
+internal fun decodeLayerBitmap(l: LayerEntity, path: String): android.graphics.Bitmap? {
+    val raw = ImageFx.decode(path, PREVIEW_MAX_SIDE) ?: return null
+    return if (l.chromaMode != 0) {
+        ChromaKey.process(raw, ChromaState(l.chromaMode, l.chromaTolerance, l.chromaSoftness), emptyList())
+            .also { if (it !== raw) raw.recycle() }
+    } else raw
 }
 
 private class LayerDraw(val layer: LayerEntity, val image: ImageBitmap?)

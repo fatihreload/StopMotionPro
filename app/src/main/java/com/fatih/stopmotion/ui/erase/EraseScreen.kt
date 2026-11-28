@@ -31,12 +31,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -217,6 +220,7 @@ fun EraseScreen(
         if (uri != null) vm.setBackgroundImage(uri)
     }
     var showPlate by remember { mutableStateOf(false) }
+    var showHelp by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { vm.messages.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } }
     LaunchedEffect(Unit) { vm.done.collect { onBack() } }
@@ -249,6 +253,24 @@ fun EraseScreen(
         )
     }
 
+    if (showHelp) {
+        AlertDialog(
+            onDismissRequest = { showHelp = false },
+            title = { Text("Cara memakai Erase") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("\u2022 Hapus: coret bagian yang ingin dibuang (tangan, kawat, penyangga).", fontSize = 13.sp)
+                    Text("\u2022 Pulihkan: coret untuk mengembalikan bagian yang terlanjur terhapus.", fontSize = 13.sp)
+                    Text("\u2022 Area yang terhapus diganti Latar bersih (foto tanpa karakter) atau warna latar.", fontSize = 13.sp)
+                    Text("\u2022 Kotak-kotak: tampilan bagian transparan. Matikan untuk melihat hasil akhir dengan latar.", fontSize = 13.sp)
+                    Text("\u2022 Bayangan: menampilkan foto asli samar di bawah hasil.", fontSize = 13.sp)
+                    Text("\u2022 Semua frame: coretan yang sama dipakai di semua frame (cocok untuk penyangga yang diam).", fontSize = 13.sp)
+                    Text("\u2022 1 jari menggambar, 2 jari cubit untuk zoom dan geser.", fontSize = 13.sp)
+                }
+            },
+            confirmButton = { TextButton(onClick = { showHelp = false }) { Text("Mengerti") } }
+        )
+    }
 
     Column(
         Modifier
@@ -275,6 +297,9 @@ fun EraseScreen(
             }
             IconButton(onClick = { session?.clear() }, enabled = session != null && session.count > 0) {
                 Icon(Icons.Filled.DeleteSweep, contentDescription = "Bersihkan semua coretan")
+            }
+            IconButton(onClick = { showHelp = true }) {
+                Icon(Icons.Filled.Info, contentDescription = "Bantuan", tint = FatihColors.TextSecondary)
             }
         }
 
@@ -439,10 +464,12 @@ fun EraseScreen(
                     }
                     if (session.count == 0) {
                         Text(
-                            "1 jari: hapus  \u2022  2 jari: zoom dan geser",
+                            "1 jari: hapus  \u2022  2 jari: zoom",
                             fontSize = 12.sp,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier
-                                .align(Alignment.BottomCenter)
+                                .align(Alignment.TopCenter)
                                 .padding(8.dp)
                                 .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
@@ -452,25 +479,20 @@ fun EraseScreen(
             }
         }
 
-        // ---------- Kontrol ----------
+        // ---------- Kontrol (ringkas: mode, kuas, opsi, simpan) ----------
         Column(
             Modifier
                 .fillMaxWidth()
                 .background(FatihColors.Surface)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ToolChip("Hapus", !restoreTool) { restoreTool = false }
-                ToolChip("Pulihkan", restoreTool) { restoreTool = true }
-                ToolChip("Bayangan", ghost) { ghost = !ghost }
-                ToolChip("Kotak-kotak", checker) { checker = !checker }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                ToolChip("Hapus", !restoreTool, Modifier.weight(1f)) { restoreTool = false }
+                ToolChip("Pulihkan", restoreTool, Modifier.weight(1f)) { restoreTool = true }
                 ToolChip(
-                    if (zoom > 1.01f) "Zoom \u00d7${"%.1f".format(zoom)} (reset)" else "Zoom 1\u00d7",
-                    zoom > 1.01f
+                    if (zoom > 1.01f) "Zoom \u00d7${"%.1f".format(zoom)} \u21ba" else "Zoom 1\u00d7",
+                    zoom > 1.01f,
+                    Modifier.weight(1f)
                 ) { zoom = 1f; pan = Offset.Zero }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -488,42 +510,28 @@ fun EraseScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(onClick = { showPlate = true }, enabled = !saving) {
-                    Text(if (chromaNow.bgPath == null) "Latar bersih" else "Latar bersih (aktif)", fontSize = 12.sp)
-                }
-                OutlinedButton(
-                    onClick = { session?.setStrokes(EraseCodec.decode(data?.previousData)) },
+                ToolChip("Kotak-kotak", checker) { checker = !checker }
+                ToolChip("Bayangan", ghost) { ghost = !ghost }
+                ToolChip(
+                    if (chromaNow.bgPath == null) "Latar bersih" else "Latar bersih \u2713",
+                    chromaNow.bgPath != null,
+                    enabled = !saving
+                ) { showPlate = true }
+                ToolChip(
+                    "Salin dari sebelumnya", false,
                     enabled = session != null && !data?.previousData.isNullOrEmpty() && !saving
-                ) { Text("Salin dari sebelumnya", fontSize = 12.sp) }
+                ) { session?.setStrokes(EraseCodec.decode(data?.previousData)) }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Spacer(Modifier.weight(1f))
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = applyAll, onCheckedChange = { applyAll = it }, enabled = !saving)
-                Spacer(Modifier.width(6.dp))
-                Text("Semua frame", fontSize = 12.sp)
+                Spacer(Modifier.width(8.dp))
+                Text("Semua frame", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Button(
+                    onClick = { session?.let { vm.save(EraseCodec.encode(it.strokes), applyAll) } },
+                    enabled = session != null && !saving,
+                    colors = ButtonDefaults.buttonColors(containerColor = FatihColors.ShutterRed, contentColor = FatihColors.OnAccent)
+                ) { Text(if (saving) "Menyimpan..." else "Simpan") }
             }
-            Text(
-                if (checker) "Kotak-kotak = bagian yang terhapus (transparan). Matikan \"Kotak-kotak\" untuk melihat hasil akhir dengan latar."
-                else "Menampilkan hasil akhir: bagian terhapus diganti latar.",
-                fontSize = 11.sp,
-                color = FatihColors.Blue,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            Spacer(Modifier.height(6.dp))
-            Button(
-                onClick = { session?.let { vm.save(EraseCodec.encode(it.strokes), applyAll) } },
-                enabled = session != null && !saving,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = FatihColors.ShutterRed, contentColor = FatihColors.OnAccent)
-            ) { Text(if (saving) "Menyimpan..." else "Simpan") }
-            Text(
-                "Gambar langsung di foto. Hapus = membuang bagian itu (tangan, kawat, penyangga); area yang terhapus " +
-                    "diganti Latar bersih (foto frame tanpa karakter) atau warna latar. Pulihkan = mengembalikan bagian yang " +
-                    "terlanjur terhapus. Semua frame = coretan yang sama dipakai di semua frame (cocok untuk penyangga yang diam).",
-                fontSize = 11.sp,
-                color = FatihColors.TextSecondary,
-                modifier = Modifier.padding(top = 6.dp)
-            )
         }
     }
 }
@@ -583,14 +591,25 @@ private fun PlateDialog(
 }
 
 @Composable
-private fun ToolChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun ToolChip(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
     Box(
-        Modifier
+        modifier
+            .alpha(if (enabled) 1f else 0.4f)
             .clip(RoundedCornerShape(20.dp))
             .background(if (selected) FatihColors.Purple else FatihColors.SurfaceHigh)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(label, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+        Text(
+            label, fontSize = 12.sp, maxLines = 1, softWrap = false,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+        )
     }
 }
